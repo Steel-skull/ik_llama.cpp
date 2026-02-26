@@ -1,9 +1,9 @@
-name: Sync and Build ik_llama
+name: Sync and Build ik_llama (Weekly)
 
 on:
   schedule:
-    - cron: '0 0 * * 0' 
-  workflow_dispatch:      # Allows you to force a build manually
+    - cron: '0 0 * * 0' # Sunday at Midnight
+  workflow_dispatch:      # Manual trigger
 
 env:
   REGISTRY: ghcr.io
@@ -23,19 +23,19 @@ jobs:
         id: sync
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
         with:
+          # UPDATED VARIABLE NAMES FOR V3.4.1
+          target_sync_branch: master
           target_repo_token: ${{ secrets.GITHUB_TOKEN }}
-          upstream_repository: ikawrakow/ik_llama.cpp
-          upstream_branch: master
-          target_branch: master
+          upstream_sync_repo: ikawrakow/ik_llama.cpp
+          upstream_sync_branch: master
 
   build-and-push:
     needs: sync
-    # Only runs if there are new commits OR you clicked "Run Workflow"
     if: needs.sync.outputs.has_new_commits == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      packages: write # Required for GHCR
 
     strategy:
       matrix:
