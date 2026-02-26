@@ -27,7 +27,7 @@ jobs:
           target_sync_branch: master 
           target_repo_token: ${{ secrets.GITHUB_TOKEN }}
           upstream_sync_repo: ikawrakow/ik_llama.cpp
-          upstream_sync_branch: master
+          upstream_sync_branch: main
           # This helps avoid the pathspec error by ensuring the branch exists locally
           target_branch_checkout_args: '-f' 
 
