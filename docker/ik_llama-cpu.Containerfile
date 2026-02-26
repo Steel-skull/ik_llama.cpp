@@ -52,12 +52,11 @@ RUN mkdir -p /app/build/src
 COPY --from=build /app/build/src /app/build/src
 WORKDIR /app
 
-# Speedup: Combine pip commands to reduce layer count
+# The Fix: Remove the pip upgrade line and just install the requirements
 RUN apt-get update && apt-get install -yq \
     git \
     python3 \
     python3-pip \
-    && pip install --break-system-packages --upgrade pip setuptools wheel \
     && pip install --break-system-packages -r requirements.txt \
     && apt-get autoremove -y \
     && apt-get clean -y \
