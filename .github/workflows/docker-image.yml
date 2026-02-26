@@ -24,7 +24,7 @@ jobs:
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
         with:
           # IMPORTANT: Change 'master' to 'main' if your fork uses 'main'
-          target_sync_branch: master 
+          target_sync_branch: main 
           target_repo_token: ${{ secrets.GITHUB_TOKEN }}
           upstream_sync_repo: ikawrakow/ik_llama.cpp
           upstream_sync_branch: main
