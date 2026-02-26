@@ -60,11 +60,10 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./docker 
           file: ./docker/ik_llama-${{ matrix.type }}.Containerfile
           target: ${{ matrix.target }}
           push: true
           build-args: |
             CUDA_DOCKER_ARCH=61;75;86;89;120
-          # Using the new lowercase IMAGE_NAME variable here
           tags: ghcr.io/${{ env.IMAGE_NAME }}:${{ matrix.type }}-${{ matrix.target }}
