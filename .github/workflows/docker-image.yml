@@ -73,7 +73,7 @@ jobs:
           target: ${{ matrix.target }}
           push: true
           build-args: |
-            CUDA_DOCKER_ARCH=all
+            CUDA_DOCKER_ARCH=80;86
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: ghcr.io/${{ env.IMAGE_NAME }}:${{ matrix.type }}-${{ matrix.target }}
