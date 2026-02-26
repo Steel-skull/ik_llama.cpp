@@ -1,4 +1,4 @@
-ARG UBUNTU_VERSION=22.04
+ARG UBUNTU_VERSION=24.04
 
 # Stage 1: Build
 FROM docker.io/ubuntu:$UBUNTU_VERSION AS build
@@ -6,12 +6,23 @@ ENV LLAMA_CURL=1
 ENV LC_ALL=C.utf8
 ARG CUSTOM_COMMIT
 
-RUN apt-get update && apt-get install -yq build-essential git libcurl4-openssl-dev curl libgomp1 cmake
+# Speedup: Added ccache to the build tools
+RUN apt-get update && apt-get install -yq build-essential git libcurl4-openssl-dev curl libgomp1 cmake ccache
+
 RUN git clone https://github.com/ikawrakow/ik_llama.cpp.git /app
 WORKDIR /app
+
 RUN if [ -n "$CUSTOM_COMMIT" ]; then git switch --detach "$CUSTOM_COMMIT"; fi
-RUN cmake -B build -DGGML_NATIVE=OFF -DLLAMA_CURL=ON -DGGML_IQK_FA_ALL_QUANTS=ON && \
+
+# Speedup: Added ccache launchers to CMake
+RUN cmake -B build \
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+    -DGGML_NATIVE=OFF \
+    -DLLAMA_CURL=ON \
+    -DGGML_IQK_FA_ALL_QUANTS=ON && \
     cmake --build build --config Release -j$(nproc)
+
 RUN mkdir -p /app/lib && \
     find build -name "*.so" -exec cp {} /app/lib \;
 RUN mkdir -p /app/build/src && \
@@ -40,12 +51,14 @@ COPY --from=build /app/full /app
 RUN mkdir -p /app/build/src
 COPY --from=build /app/build/src /app/build/src
 WORKDIR /app
+
+# Speedup: Combine pip commands to reduce layer count
 RUN apt-get update && apt-get install -yq \
     git \
     python3 \
     python3-pip \
-    && pip install --upgrade pip setuptools wheel \
-    && pip install -r requirements.txt \
+    && pip install --break-system-packages --upgrade pip setuptools wheel \
+    && pip install --break-system-packages -r requirements.txt \
     && apt-get autoremove -y \
     && apt-get clean -y \
     && rm -rf /tmp/* /var/tmp/* \
