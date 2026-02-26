@@ -17,17 +17,19 @@ jobs:
       - name: Checkout your fork
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0 # Fetches all history for all branches and tags
 
       - name: Sync with Upstream
         id: sync
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
         with:
-          # UPDATED VARIABLE NAMES FOR V3.4.1
-          target_sync_branch: master
+          # IMPORTANT: Change 'master' to 'main' if your fork uses 'main'
+          target_sync_branch: master 
           target_repo_token: ${{ secrets.GITHUB_TOKEN }}
           upstream_sync_repo: ikawrakow/ik_llama.cpp
           upstream_sync_branch: master
+          # This helps avoid the pathspec error by ensuring the branch exists locally
+          target_branch_checkout_args: '-f' 
 
   build-and-push:
     needs: sync
@@ -35,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write # Required for GHCR
+      packages: write
 
     strategy:
       matrix:
