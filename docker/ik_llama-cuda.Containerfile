@@ -52,23 +52,25 @@ RUN apt-get update && apt-get install -yq libgomp1 curl \
     && find /var/cache -type f -delete
 COPY --from=build /app/lib/ /app
 
-# Stage 3: full
+# Stage 3: Full
 FROM base AS full
 COPY --from=build /app/full /app
 RUN mkdir -p /app/build/src
 COPY --from=build /app/build/src /app/build/src
 WORKDIR /app
+
+# The Fix: Remove the pip upgrade line and just install the requirements
 RUN apt-get update && apt-get install -yq \
     git \
     python3 \
     python3-pip \
-    && pip3 install --break-system-packages -r requirements.txt \
+    && pip install --break-system-packages -r requirements.txt \
     && apt-get autoremove -y \
     && apt-get clean -y \
     && rm -rf /tmp/* /var/tmp/* \
     && find /var/cache/apt/archives /var/lib/apt/lists -not -name lock -type f -delete \
     && find /var/cache -type f -delete
-ENTRYPOINT ["/app/tools.sh"]
+ENTRYPOINT ["/app/full/tools.sh"]
 
 # Stage 4: Server
 FROM base AS server
