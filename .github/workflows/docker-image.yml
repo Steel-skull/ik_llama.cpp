@@ -2,7 +2,7 @@ name: Sync and Build ik_llama (Weekly)
 
 on:
   schedule:
-    - cron: '0 0 * * 0' 
+    - cron: '0 0 * * 0' # Sunday at Midnight
   workflow_dispatch:      
 
 env:
@@ -46,6 +46,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # THIS PREVENTS "NO SPACE LEFT ON DEVICE" ERRORS
+      - name: Free Disk Space
+        uses: ggml-org/free-disk-space@v1.3.1
+
       - name: Lowercase Repository Name
         run: |
           echo "IMAGE_NAME=${GITHUB_REPOSITORY@L}" >> ${GITHUB_ENV}
@@ -60,10 +64,11 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: ./docker 
+          context: ./docker
           file: ./docker/ik_llama-${{ matrix.type }}.Containerfile
           target: ${{ matrix.target }}
           push: true
           build-args: |
-            CUDA_DOCKER_ARCH=86;89;90
+            # "all" matches the official llama.cpp build strategy
+            CUDA_DOCKER_ARCH=all
           tags: ghcr.io/${{ env.IMAGE_NAME }}:${{ matrix.type }}-${{ matrix.target }}
