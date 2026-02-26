@@ -4,18 +4,19 @@ ARG BASE_CUDA_DEV_CONTAINER=docker.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${
 ARG BASE_CUDA_RUN_CONTAINER=docker.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION}
 
 # Stage 1: Build
+# Stage 1: Build
 FROM ${BASE_CUDA_DEV_CONTAINER} AS build
 ARG CUDA_DOCKER_ARCH=default
-# Add ccache to the install list
 RUN apt-get update && apt-get install -yq build-essential git libcurl4-openssl-dev curl libgomp1 cmake ccache
 
 RUN git clone https://github.com/ikawrakow/ik_llama.cpp.git /app
 WORKDIR /app
 
-# The fix: Add -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+# The Fix: Export LIBRARY_PATH so the linker finds the CUDA stubs
 RUN if [ "${CUDA_DOCKER_ARCH}" != "default" ]; then \
         export CMAKE_ARGS="-DCMAKE_CUDA_ARCHITECTURES=${CUDA_DOCKER_ARCH}"; \
     fi && \
+    export LIBRARY_PATH=/usr/local/cuda/lib64/stubs:$LIBRARY_PATH && \
     cmake -B build \
         -DCMAKE_C_COMPILER_LAUNCHER=ccache \
         -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
@@ -26,6 +27,7 @@ RUN if [ "${CUDA_DOCKER_ARCH}" != "default" ]; then \
         -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
         -DCMAKE_C_FLAGS="-fPIC -mcmodel=large" \
         -DCMAKE_CXX_FLAGS="-fPIC -mcmodel=large" \
+        -DCMAKE_EXE_LINKER_FLAGS="-Wl,--allow-shlib-undefined -L/usr/local/cuda/lib64/stubs" \
         ${CMAKE_ARGS} . && \
     cmake --build build --config Release -j$(nproc)
 
