@@ -5,25 +5,28 @@ ARG BASE_CUDA_RUN_CONTAINER=docker.io/nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu
 
 # Stage 1: Build
 FROM ${BASE_CUDA_DEV_CONTAINER} AS build
-ARG CUDA_DOCKER_ARCH=default # CUDA architecture to build for (defaults to all supported archs)
-RUN apt-get update && apt-get install -yq build-essential git libcurl4-openssl-dev curl libgomp1 cmake
+ARG CUDA_DOCKER_ARCH=default
+# Add ccache to the install list
+RUN apt-get update && apt-get install -yq build-essential git libcurl4-openssl-dev curl libgomp1 cmake ccache
 
 RUN git clone https://github.com/ikawrakow/ik_llama.cpp.git /app
 WORKDIR /app
 
-# The fix: Added -mcmodel=large and -fPIC to handle the "Fat Binary" linker limits
+# The fix: Add -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 RUN if [ "${CUDA_DOCKER_ARCH}" != "default" ]; then \
         export CMAKE_ARGS="-DCMAKE_CUDA_ARCHITECTURES=${CUDA_DOCKER_ARCH}"; \
     fi && \
     cmake -B build \
+        -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+        -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+        -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
         -DGGML_NATIVE=OFF \
         -DGGML_CUDA=ON \
         -DLLAMA_CURL=ON \
         -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
         -DCMAKE_C_FLAGS="-fPIC -mcmodel=large" \
         -DCMAKE_CXX_FLAGS="-fPIC -mcmodel=large" \
-        ${CMAKE_ARGS} \
-        -DCMAKE_EXE_LINKER_FLAGS="-Wl,--allow-shlib-undefined" . && \
+        ${CMAKE_ARGS} . && \
     cmake --build build --config Release -j$(nproc)
 
 RUN mkdir -p /app/lib && \
