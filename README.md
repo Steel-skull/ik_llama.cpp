@@ -4,7 +4,9 @@
 
 ## TL;DR
 
-This repository is a fork of [llama.cpp](https://github.com/ggerganov/llama.cpp) with better CPU and hybrid GPU/CPU performance, new SOTA quantization types, first-class Bitnet support, better DeepSeek performance via MLA, FlashMLA, fused MoE operations and tensor overrides for hybrid GPU/CPU inference, row-interleaved quant packing, etc.
+Note: this is just a fork set to build docker containers for [ik_llama.cpp)](https://github.com/ikawrakow/ik_llama.cpp) in both CUDA and CPU versions. This is set to run once weekly on sundays.
+
+The [ik_llama.cpp)](https://github.com/ikawrakow/ik_llama.cpp) repository is a fork of [llama.cpp](https://github.com/ggerganov/llama.cpp) with better CPU and hybrid GPU/CPU performance, new SOTA quantization types, first-class Bitnet support, better DeepSeek performance via MLA, FlashMLA, fused MoE operations and tensor overrides for hybrid GPU/CPU inference, row-interleaved quant packing, etc.
 
 >[!IMPORTANT]
 >Do not use quantized models from Unsloth that have `_XL` in their name. These are likely to not work with `ik_llama.cpp`.
