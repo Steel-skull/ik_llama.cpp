@@ -23,10 +23,10 @@ jobs:
         id: sync
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
         with:
-          target_sync_branch: master 
+          target_sync_branch: main 
           target_repo_token: ${{ secrets.GITHUB_TOKEN }}
           upstream_sync_repo: ikawrakow/ik_llama.cpp
-          upstream_sync_branch: master
+          upstream_sync_branch: main
           target_branch_checkout_args: '-f' 
 
   build-and-push:
@@ -46,7 +46,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # THIS STEP FIXES THE UPPERCASE ERROR
       - name: Lowercase Repository Name
         run: |
           echo "IMAGE_NAME=${GITHUB_REPOSITORY@L}" >> ${GITHUB_ENV}
