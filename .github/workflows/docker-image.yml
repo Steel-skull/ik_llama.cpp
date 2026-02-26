@@ -62,13 +62,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./docker
           file: ./docker/ik_llama-${{ matrix.type }}.Containerfile
           target: ${{ matrix.target }}
           push: true
           build-args: |
-            # "all" matches the official llama.cpp build strategy
             CUDA_DOCKER_ARCH=all
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: ghcr.io/${{ env.IMAGE_NAME }}:${{ matrix.type }}-${{ matrix.target }}
