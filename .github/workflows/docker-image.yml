@@ -65,5 +65,5 @@ jobs:
           target: ${{ matrix.target }}
           push: true
           build-args: |
-            CUDA_DOCKER_ARCH=61;75;86;89;120
+            CUDA_DOCKER_ARCH=61;75;86;89;90
           tags: ghcr.io/${{ env.IMAGE_NAME }}:${{ matrix.type }}-${{ matrix.target }}
