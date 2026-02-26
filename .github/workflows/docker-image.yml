@@ -45,8 +45,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
 
-      # THIS PREVENTS "NO SPACE LEFT ON DEVICE" ERRORS
       - name: Free Disk Space
         uses: ggml-org/free-disk-space@v1.3.1
 
