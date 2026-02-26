@@ -10,11 +10,22 @@ RUN apt-get update && apt-get install -yq build-essential git libcurl4-openssl-d
 
 RUN git clone https://github.com/ikawrakow/ik_llama.cpp.git /app
 WORKDIR /app
+
+# The fix: Added -mcmodel=large and -fPIC to handle the "Fat Binary" linker limits
 RUN if [ "${CUDA_DOCKER_ARCH}" != "default" ]; then \
-    export CMAKE_ARGS="-DCMAKE_CUDA_ARCHITECTURES=${CUDA_DOCKER_ARCH}"; \
+        export CMAKE_ARGS="-DCMAKE_CUDA_ARCHITECTURES=${CUDA_DOCKER_ARCH}"; \
     fi && \
-    cmake -B build -DGGML_NATIVE=OFF -DGGML_CUDA=ON -DLLAMA_CURL=ON ${CMAKE_ARGS} -DCMAKE_EXE_LINKER_FLAGS=-Wl,--allow-shlib-undefined . && \
+    cmake -B build \
+        -DGGML_NATIVE=OFF \
+        -DGGML_CUDA=ON \
+        -DLLAMA_CURL=ON \
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+        -DCMAKE_C_FLAGS="-fPIC -mcmodel=large" \
+        -DCMAKE_CXX_FLAGS="-fPIC -mcmodel=large" \
+        ${CMAKE_ARGS} \
+        -DCMAKE_EXE_LINKER_FLAGS="-Wl,--allow-shlib-undefined" . && \
     cmake --build build --config Release -j$(nproc)
+
 RUN mkdir -p /app/lib && \
     find build -name "*.so" -exec cp {} /app/lib \;
 RUN mkdir -p /app/build/src && \
