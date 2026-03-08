@@ -1024,6 +1024,7 @@ bool server_context::launch_slot_with_task(server_slot& slot, server_task& task)
             }
             else if (penalty_prompt->is_array()) {
                 const auto n_tokens = penalty_prompt->size();
+                slot.sparams.penalty_prompt_tokens.clear();
                 slot.sparams.penalty_prompt_tokens.reserve(n_tokens + std::max(0, slot.params.n_predict));
 
                 const int n_vocab = llama_n_vocab(model);
@@ -1067,6 +1068,7 @@ bool server_context::launch_slot_with_task(server_slot& slot, server_task& task)
 
         const auto preserved_tokens = data.find("preserved_tokens");
         if (preserved_tokens != data.end()) {
+            slot.sparams.preserved_tokens.clear();
             for (const auto& t : *preserved_tokens) {
                 auto ids = common_tokenize(model, t.get<std::string>(), /* add_special= */ false, /* parse_special= */ true);
                 if (ids.size() == 1) {
@@ -1081,6 +1083,7 @@ bool server_context::launch_slot_with_task(server_slot& slot, server_task& task)
         }
         const auto grammar_triggers = data.find("grammar_triggers");
         if (grammar_triggers != data.end()) {
+            slot.sparams.grammar_triggers.clear();
             for (const auto& t : *grammar_triggers) {
                 server_grammar_trigger ct(t);
                 if (ct.value.type == COMMON_GRAMMAR_TRIGGER_TYPE_WORD) {
@@ -1531,7 +1534,7 @@ void server_context::populate_token_probs(const server_slot& slot, completion_to
         for (size_t i = 0; i < std::min(max_probs, n_probs); i++) {
             result.probs.push_back({
                 cur_p->data[i].id,
-                common_token_to_piece(ctx, {cur_p->data[i].id}, special),
+                common_token_to_piece(ctx, cur_p->data[i].id, special),
                 cur_p->data[i].p
                 });
         }
@@ -1547,7 +1550,7 @@ void server_context::populate_token_probs(const server_slot& slot, completion_to
         for (size_t i = 0; i < std::min(n_vocab, n_probs); i++) {
             result.probs.push_back({
                 cur[i].id,
-                common_token_to_piece(ctx, {cur[i].id}, special),
+                common_token_to_piece(ctx, cur[i].id, special),
                 cur[i].p
                 });
         }
@@ -3058,6 +3061,12 @@ void server_context::batch_pending_prompt(const int32_t n_ubatch, const int32_t 
                     slot_npast++;
                     slot.n_past_prompt++;
                     slot.n_past++;
+                    slot.do_checkpoint = false;
+                    if (params_base.do_checkpoint && slot.n_prompt_tokens - slot.n_past_prompt == params_base.ctx_checkpoints_tolerance) {
+                        slot.do_checkpoint = true;
+                        break;
+                    }
+                    
                 }
                 LOG_VERBOSE("prompt processing progress", {
                     {"id_slot",  slot.id},
@@ -3323,6 +3332,7 @@ void server_context::buffer_and_check_string_ban(server_slot & slot, completion_
     bool next_token = has_next_token(result, slot);
     bool send_result = slot.token_buffer.size() >= slot.n_buffer || !next_token;
     int32_t n_rewind = 0;
+    bool sent_results = false;
     // don't restore if last time was also rewind
     if (!slot.rewind_status) {
         slot.ctx_sampling->params.logit_bias = slot.logit_bias; // restore logit bias
@@ -3334,7 +3344,6 @@ void server_context::buffer_and_check_string_ban(server_slot & slot, completion_
     if (n_rewind > 0 && (slot.rewind_count <20 || slot.rewind_count <= 2 * slot.ban_phrases.size())) {
         rewind_context(slot, n_rewind);
         slot.rewind_status = true;
-        slot.ctx_sampling->rewind_samplers = true;
     }
     else if (send_result) {
         slot.rewind_status = false;
@@ -3347,12 +3356,14 @@ void server_context::buffer_and_check_string_ban(server_slot & slot, completion_
             // send 1 token
             send_token_results(slot.token_buffer, slot, 1);
         }
-        slot.ctx_sampling->record_samplers = true;
+        sent_results = true;
     }
     else {
         // buffer the result
         slot.sampled = result.tok; // for common batch add
     }
+
+    slot.ctx_sampling->n_rewind = sent_results ? -1 : n_rewind;
 }
 
 void server_context::process_batch_tokens(int32_t & n_batch) {
@@ -3413,8 +3424,13 @@ void server_context::process_batch_tokens(int32_t & n_batch) {
 
         for (auto& slot : slots) {
             if (slot.state != SLOT_STATE_PROCESSING || slot.i_batch < (int)i || slot.i_batch >= (int)(i + n_tokens)) {
+                // save checkpoint during prompt processing
                 if (slot.command == SLOT_COMMAND_LOAD_PROMPT) {
-                    create_checkpoint_at_interval(slot, params_base);       
+                    if (slot.do_checkpoint) {
+                        create_checkpoint(slot);
+                    } else {
+                        create_checkpoint_at_interval(slot, params_base);
+                    }
                 }
                 continue; // continue loop of slots
             }
@@ -3459,12 +3475,13 @@ void server_context::process_batch_tokens(int32_t & n_batch) {
                 slot.t_start_generation = ggml_time_us();
                 slot.t_prompt_processing = (slot.t_start_generation - slot.t_start_process_prompt) / 1e3;
                 metrics.on_prompt_eval(slot);
-                if (params_base.do_checkpoint) {
+                // create checkpoint after prompt processing ends
+                if (params_base.ctx_checkpoints_tolerance<=0 && params_base.do_checkpoint) {
                     create_checkpoint(slot);
                 }
             }
 
-            // save checkpoint during generation
+            // create checkpoint during generation
             if (slot.n_decoded > 1) {
                 create_checkpoint_at_interval(slot, params_base);
             }

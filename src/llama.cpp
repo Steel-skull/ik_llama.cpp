@@ -590,6 +590,7 @@ bool llama_context::update_cache_copies() {
                 GGML_ASSERT(kl->n_device == vl->n_device);
             }
             for (int id = 0; id < kl->n_device; ++id) {
+                if (!kl->splits[id]) continue;
                 auto& c = cache_copies[2*model.splits.size()*il + 2*id + 0];
                 if (!c.cpy || c.cpy->op != GGML_OP_CPY || c.cpy->view_src != kl->splits[id]) return false;
                 c.cpy->view_offs = kv_self.head*c.step;
@@ -598,6 +599,7 @@ bool llama_context::update_cache_copies() {
             }
             if (!vl) continue;
             for (int id = 0; id < vl->n_device; ++id) {
+                if (!vl->splits[id]) continue;
                 auto& c = cache_copies[2*model.splits.size()*il + 2*id + 1];
                 if (!c.cpy || c.cpy->op != GGML_OP_CPY || c.cpy->view_src != vl->splits[id]) return false;
                 c.cpy->view_offs = kv_self.head*c.step;
@@ -1706,8 +1708,8 @@ static void llm_prepare_mla(llama_model & model, int mla) {
             l.wk_b = l.computed_wk_b.get();
             model.tensors_by_name.push_back(std::make_pair(name, l.wk_b));
 
-            printf("Computed %s as %ld x %ld x %ld and stored in buffer %s\n", name.c_str(), wk_b->ne[0], wk_b->ne[1], wk_b->ne[2],
-                    ggml_backend_buffer_name(l.computed_wk_b->buffer));
+            printf("Computed %s as %d x %d x %d of type %s and stored in buffer %s\n", name.c_str(), (int)wk_b->ne[0], (int)wk_b->ne[1], (int)wk_b->ne[2],
+                    ggml_type_name(wk_b->type), ggml_backend_buffer_name(l.computed_wk_b->buffer));
 
             ggml_graph_clear(graph);
             auto wv_b = ggml_cont(ctx, ggml_view_3d(ctx, &wkv_b, kv_lora_rank, n_embd_head_v, n_head,
@@ -1738,8 +1740,8 @@ static void llm_prepare_mla(llama_model & model, int mla) {
             l.wv_b = l.computed_wv_b.get();
             model.tensors_by_name.push_back(std::make_pair(name, l.wv_b));
 
-            printf("Computed %s as %ld x %ld x %ld and stored in buffer %s\n", name.c_str(), wv_b->ne[0], wv_b->ne[1], wv_b->ne[2],
-                    ggml_backend_buffer_name(l.computed_wv_b->buffer));
+            printf("Computed %s as %d x %d x %d of type %s and stored in buffer %s\n", name.c_str(), (int)wv_b->ne[0], (int)wv_b->ne[1], (int)wv_b->ne[2],
+                    ggml_type_name(wv_b->type), ggml_backend_buffer_name(l.computed_wv_b->buffer));
 
             ggml_graph_clear(graph);
         }
@@ -1873,8 +1875,8 @@ static void llm_prepare_mla(llama_model & model, int mla) {
         l.wkv_b = l.computed_wkv_b.get();
         model.tensors_by_name.push_back(std::make_pair(name, l.wkv_b));
 
-        printf("Computed %s as %ld x %ld and stored in buffer %s\n", name.c_str(), wkv_b->ne[0], wkv_b->ne[1],
-                    ggml_backend_buffer_name(l.computed_wkv_b->buffer));
+        printf("Computed %s as %d x %d of type %s and stored in buffer %s\n", name.c_str(), (int)wkv_b->ne[0], (int)wkv_b->ne[1],
+                    ggml_type_name(wkv_b->type), ggml_backend_buffer_name(l.computed_wkv_b->buffer));
 
         ggml_graph_clear(graph);
     }
@@ -1939,6 +1941,7 @@ static bool is_model_split_supported(const llama_model & model) {
         LLM_ARCH_STEP35,
         LLM_ARCH_QWEN3NEXT,
         LLM_ARCH_QWEN35,
+        LLM_ARCH_QWEN35MOE,
     };
     auto it =  k_supported.find(model.arch);
     return it != k_supported.end();
@@ -4692,8 +4695,6 @@ struct llama_context * llama_init_from_model(
                  struct llama_model * model,
         struct llama_context_params   params) {
 
-    printf("===================================== %s: %s\n", __func__, ggml_type_name(params.type_reduce));
-
     if (!model) {
         LLAMA_LOG_ERROR("%s: model cannot be NULL\n", __func__);
         return nullptr;
@@ -6348,7 +6349,7 @@ struct llama_data_read {
                 }
                 continue;
             }
-            const uint64_t k_size_row = (ctx->cparams.mla_attn == 0) ? ggml_row_size(kv_self.k_l[il]->type, n_embd_k_gqa) : ggml_row_size(kv_self.k_l[il]->type, kv_lora_rank + n_embd_head_qk_rope);
+            const size_t k_size_row = (ctx->cparams.mla_attn == 0) ? ggml_row_size(kv_self.k_l[il]->type, n_embd_k_gqa) : ggml_row_size(kv_self.k_l[il]->type, kv_lora_rank + n_embd_head_qk_rope);
             if (k_size_row != k_size_row_ref) {
                 LLAMA_LOG_ERROR("%s: mismatched key row size (%zu != %zu, layer %d)\n", __func__, k_size_row, (size_t) k_size_row_ref, il);
                 return false;
@@ -8303,8 +8304,8 @@ struct llama_sampler_adaptive_p * llama_init_adaptive_p(int n_vocab, const float
     return llama_init_adaptive_p_impl(n_vocab, target, decay, updt_w_cur, seed);
 }
 
-void llama_review_adaptive_p(struct llama_sampler_adaptive_p * adapt_p_ctx, const bool record, const bool rewind) {
-    llama_review_adaptive_p_impl(adapt_p_ctx, record, rewind);
+void llama_review_adaptive_p(struct llama_sampler_adaptive_p * adapt_p_ctx, const int32_t n_rewind) {
+    llama_review_adaptive_p_impl(adapt_p_ctx, n_rewind);
 }
 
 

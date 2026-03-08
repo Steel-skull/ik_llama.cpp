@@ -238,7 +238,7 @@
 // Maximum number of model contexts (e.g., for model shards).
 // Increase this value using -DGGML_MAX_CONTEXTS=<value> in CMake
 // if you need to load more than 64 model shards.
-#define GGML_MAX_CONTEXTS 64
+#define GGML_MAX_CONTEXTS       64
 #endif
 #define GGML_MAX_SRC            10
 #ifndef GGML_MAX_NAME
@@ -773,7 +773,7 @@ extern "C" {
     struct ggml_tensor {
         enum ggml_type         type;
 
-        GGML_DEPRECATED(enum ggml_backend_type backend, "use the buffer type to find the storage location of the tensor");
+        enum ggml_backend_type __backend;
 
         struct ggml_backend_buffer * buffer;
 

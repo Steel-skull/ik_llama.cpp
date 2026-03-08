@@ -575,6 +575,7 @@ extern "C" {
 
     LLAMA_API enum llama_pooling_type llama_pooling_type(const struct llama_context * ctx);
 
+    struct llama_vocab;
     LLAMA_API enum llama_vocab_type   llama_vocab_type(const struct llama_vocab * vocab);
     LLAMA_API enum llama_rope_type    llama_rope_type   (const struct llama_model * model);
 
@@ -586,7 +587,7 @@ extern "C" {
     LLAMA_API int32_t llama_n_ctx_train(const struct llama_model * model);
     LLAMA_API int32_t llama_model_n_embd     (const struct llama_model * model);
     LLAMA_API int32_t llama_model_n_embd_inp(const struct llama_model* model);
-    
+
     LLAMA_API int32_t llama_n_layer    (const struct llama_model * model);
 
     // Compat
@@ -1414,7 +1415,7 @@ LLAMA_API struct llama_grammar* llama_sampler_init_grammar_lazy_patterns(
                                llama_token_data_array * candidates,
                       struct llama_sampler_adaptive_p * adapt_p_ctx);
 
-    void llama_review_adaptive_p(struct llama_sampler_adaptive_p * adapt_p_ctx, const bool record, const bool rewind);
+    void llama_review_adaptive_p(struct llama_sampler_adaptive_p * adapt_p_ctx, const int32_t n_rewind);
 
 
     /// @details Mirostat 1.0 algorithm described in the paper https://arxiv.org/abs/2007.14966. Uses tokens instead of words.
