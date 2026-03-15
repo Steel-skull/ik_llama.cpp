@@ -16402,29 +16402,31 @@ static void ggml_compute_forward_fused_rms_norm_f32(
 
     GGML_ASSERT(eps > 0.0f);
 
-    // TODO: optimize
-    for (int64_t i03 = 0; i03 < ne03; i03++) {
-        for (int64_t i02 = 0; i02 < ne02; i02++) {
-            for (int64_t i01 = ith; i01 < ne01; i01 += nth) {
-                const float * x = (float *) ((char *) src0->data + i01*nb01 + i02*nb02 + i03*nb03);
+    int nrows = ne03*ne02*ne01;
+    int nrows_per_thread = (nrows + nth - 1)/nth;
+    int first = ith*nrows_per_thread;
+    int last  = MIN(nrows, first + nrows_per_thread);
 
-                ggml_float sum = 0.0;
-                for (int64_t i00 = 0; i00 < ne00; i00++) {
-                    sum += (ggml_float)(x[i00] * x[i00]);
-                }
+    const float * c = (float *) src1->data;
 
-                const float mean = sum/ne00;
+    for (int ir = first; ir < last; ++ir) {
+        int i03 = ir/(ne01*ne02);
+        int i02 = (ir - i03*ne01*ne02)/ne01;
+        int i01 = ir - i03*ne01*ne02 - i02*ne01;
+        const float * x = (float *) ((char *) src0->data + i01*nb01 + i02*nb02 + i03*nb03);
+              float * y = (float *) ((char *) dst->data +  i01*nb1  + i02*nb2  + i03*nb3);
 
-                float * y = (float *) ((char *) dst->data + i01*nb1 + i02*nb2 + i03*nb3);
-
-                const float scale = 1.0f/sqrtf(mean + eps);
-
-                ggml_vec_mul_f32(ne00, y, x, (const float *)src1->data);
-                ggml_vec_scale_f32(ne00, y, scale);
-
-            }
+        ggml_float sum = 0.0;
+        for (int64_t i00 = 0; i00 < ne00; i00++) {
+            sum += (ggml_float)(x[i00] * x[i00]);
+        }
+        const float mean = sum/ne00;
+        const float scale = 1.0f/sqrtf(mean + eps);
+        for (int j = 0; j < (int)ne00; ++j) {
+            y[j] = scale * c[j] * x[j];
         }
     }
+
 }
 
 static void ggml_compute_forward_fused_rms_norm(
@@ -17448,12 +17450,20 @@ static void ggml_compute_forward_mul_mat_id_up_gate(
             continue;
         }
 
-        const char * src0_1_cur = (const char *) src0_1->data + cur_a*nb02;
-        const char * src0_2_cur = src0_2 ? (const char *) src0_2->data + cur_a*nb02 : src0_1_cur + nb02/2;
-        const char * up_b_cur   = up_b   ? (const char *)up_b->data + cur_a*nb41 : NULL;
-        const char * gate_b_cur = gate_b ? (const char *)gate_b->data + cur_a*nb51 : NULL;
-        if (up_b_cur && !gate_b_cur) {
-            gate_b_cur = up_b_cur + nb41/2;
+        const char *src0_1_cur, *src0_2_cur, *up_b_cur = NULL, *gate_b_cur = NULL;
+        if (src0_2) {
+            src0_1_cur = (const char *) src0_1->data + cur_a*nb02;
+            src0_2_cur = (const char *) src0_2->data + cur_a*nb02;
+            up_b_cur   = up_b   ? (const char *)up_b->data + cur_a*nb41 : NULL;
+            gate_b_cur = gate_b ? (const char *)gate_b->data + cur_a*nb51 : NULL;
+        } else {
+            src0_2_cur = (const char *) src0_1->data + cur_a*nb02;
+            src0_1_cur = src0_2_cur + nb02/2;
+            if (up_b) {
+                GGML_ASSERT(!gate_b);
+                gate_b_cur = (const char *)up_b->data + cur_a*nb41;
+                up_b_cur   = gate_b_cur + nb41/2;
+            }
         }
 
         const void * wdata    = (src1->type == vec_dot_type) ? src1->data : params->wdata;
@@ -17462,7 +17472,6 @@ static void ggml_compute_forward_mul_mat_id_up_gate(
         const int64_t nr0 = src0_2 ? ne01 : ne01/2; // src0 rows
         const int64_t nr1 = cne1; // src1 rows
 
-        //if (ith == 0) printf("Calling iqk_moe_fused_up_gate with nr0 = %d, nr1 = %d, ne00 = %d, ne11 = %d\n", (int)nr0, (int)nr1, (int)ne00, (int)ne11);
         if (!iqk_moe_fused_up_gate(nr0, nr1, ne00, ne11, dst->op_params[0],
                             type, src0_1_cur, src0_2_cur, nb01,
                             vec_dot_type, (const char *)wdata, row_size,
@@ -22225,9 +22234,9 @@ static void ggml_compute_forward_flash_attn_back(
 
 // ggml_compute_forward_ssm_conv
 
-static void ggml_compute_forward_ssm_conv_f32(
+static int ggml_compute_forward_ssm_conv_f32(
         const struct ggml_compute_params * params,
-        struct ggml_tensor * dst) {
+        struct ggml_tensor * dst, int node, const struct ggml_cgraph * cgraph) {
     const struct ggml_tensor * src0 = dst->src[0]; // conv_state
     const struct ggml_tensor * src1 = dst->src[1]; // x
     const struct ggml_tensor * src2 = dst->src[2]; // conv1d.weight
@@ -22249,6 +22258,21 @@ static void ggml_compute_forward_ssm_conv_f32(
     GGML_ASSERT(src0->nb[1] == src0->ne[0]*sizeof(float));
     // for use with the destination state offset between sequences
     GGML_ASSERT(src2->nb[2] == src2->ne[1]*src2->ne[0]*sizeof(float));
+
+    if (n_kv == 1 && nc == 4) {
+        float * dst_silu = NULL;
+        if (node < cgraph->n_nodes + 2 &&
+            cgraph->nodes[node+1]->op == GGML_OP_VIEW && cgraph->nodes[node+1]->src[0] == dst &&
+            cgraph->nodes[node+2]->op == GGML_OP_UNARY && cgraph->nodes[node+2]->src[0] == cgraph->nodes[node+1] &&
+            (enum ggml_unary_op)cgraph->nodes[node+2]->op_params[0] == GGML_UNARY_OP_SILU) {
+            dst_silu = (float *)cgraph->nodes[node+2]->data;
+        }
+        if (iqk_ssm_conv4(nr, nc, n_t, src0->nb[1], src1->nb[0], src1->nb[1], src2->nb[1],
+                    (const float *)src1->data, (const float *)src0->data, (const float *)src2->data,
+                    (float *)dst->data, dst_silu, ith, nth)) {
+            return node + (dst_silu ? 2 : 0);
+        }
+    }
 
     // rows per thread
     const int dr = (nr + nth - 1)/nth;
@@ -22328,15 +22352,15 @@ static void ggml_compute_forward_ssm_conv_f32(
             x[i1] = sumf;
         }
     }
+    return node;
 }
 
-static void ggml_compute_forward_ssm_conv(
-        const struct ggml_compute_params * params,
-        struct ggml_tensor * dst) {
+static int ggml_compute_forward_ssm_conv(const struct ggml_compute_params * params,
+        struct ggml_tensor * dst, int node, const struct ggml_cgraph * cgraph) {
     switch (dst->src[0]->type) {
         case GGML_TYPE_F32:
             {
-                ggml_compute_forward_ssm_conv_f32(params, dst);
+                return ggml_compute_forward_ssm_conv_f32(params, dst, node, cgraph);
             } break;
         default:
             {
@@ -24392,7 +24416,7 @@ static int ggml_compute_forward(struct ggml_compute_params * params, struct ggml
             } break;
         case GGML_OP_SSM_CONV:
             {
-                ggml_compute_forward_ssm_conv(params, tensor);
+                i = ggml_compute_forward_ssm_conv(params, tensor, i, cgraph);
             } break;
         case GGML_OP_SSM_SCAN:
             {

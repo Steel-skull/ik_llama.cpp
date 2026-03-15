@@ -81,7 +81,7 @@ struct server_slot {
     bool stopped_eos = false;
     bool stopped_word = false;
     bool stopped_limit = false;
-
+    bool saturate_predict = false;
     bool oaicompat = false;
 
     std::string oaicompat_model;
@@ -91,12 +91,16 @@ struct server_slot {
     // For context rewind/ token buffer
     size_t n_buffer = 0;
     int32_t rewind_count = 0;
+    int32_t rewind_count_max = -1;
     bool rewind_status = false;
     std::unordered_map<llama_token, float> logit_bias;
-    std::vector<std::string>ban_phrases;
+    std::vector<std::string> ban_phrases;
+    std::vector<std::string> ban_regex;
+    std::vector<std::string> ban_regex_ci;
     completion_token_outputs token_buffer;
     float ban_phrases_bias = 0;
     int32_t banned_n = 1;
+	std::map<int32_t, std::set<llama_token>> positional_bans;
 
     server_prompt server_cached_prompt;
 
@@ -106,6 +110,7 @@ struct server_slot {
 
     size_t checkpoint_pos = 0;
     bool do_checkpoint = false;
+    bool image_just_processed = false;
 
     // sampling
     llama_token sampled; // in speculative mode, this is the last accepted token
@@ -251,7 +256,9 @@ struct server_context {
     server_metrics metrics;
 
     common_chat_templates_ptr chat_templates;
-    oaicompat_parser_options  oai_parser_opt;
+    server_chat_params  chat_params;
+    std::map<std::string, bool> chat_template_caps;
+
     // Necessary similarity of prompt for slot selection
     float slot_prompt_similarity = 0.0f;
     int32_t cache_ram_n_min = 0;
@@ -296,7 +303,7 @@ struct server_context {
     void send_error(const int id_task, const int id_multi, const std::string& error, const enum error_type type = ERROR_TYPE_SERVER);
 
     // if multimodal is enabled, send an error and return false
-    bool ensure_no_mtmd(const int id_task);
+    bool check_no_mtmd(const int id_task);
 
     void send_partial_response(server_slot& slot, completion_token_output tkn);
 
@@ -357,7 +364,7 @@ struct server_context {
     // Re-aggregates all active vectors and updates the model state
     bool apply_control_vectors_internal();
 
-    void create_checkpoint(server_slot & slot);
+    bool create_checkpoint(server_slot & slot);
 
     void apply_checkpoint(server_slot & slot);
 

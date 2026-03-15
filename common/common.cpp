@@ -495,10 +495,15 @@ void gpt_params_parse_from_env(gpt_params & params) {
     get_env("LLAMA_ARG_CONT_BATCHING",    params.cont_batching);
     get_env("LLAMA_ARG_HOST",             params.hostname);
     get_env("LLAMA_ARG_PORT",             params.port);
+    get_env("LLAMA_ARG_CACHE_TYPE_K",     params.cache_type_k);
+    get_env("LLAMA_ARG_CACHE_TYPE_V",     params.cache_type_v);
+    get_env("LLAMA_ARG_MLOCK",            params.use_mlock);
+    get_env("LLAMA_ARG_K_CACHE_HADAMARD", params.k_cache_hadamard);
 
 }
 
 bool gpt_params_parse(int argc, char ** argv, gpt_params & params) {
+    gpt_params_parse_from_env(params);
     const auto params_org = params; // the example can modify the default params
 
     try {
@@ -1477,7 +1482,7 @@ bool gpt_params_find_arg(int argc, char ** argv, const std::string & arg, gpt_pa
         return true;
     }
     if (arg == "--cpu-moe" || arg == "-cmoe") {
-        params.tensor_buft_overrides.push_back({strdup("\\.ffn_(up|down|gate)_exps\\.weight"), ggml_backend_cpu_buffer_type()});
+        params.tensor_buft_overrides.push_back({strdup("\\.ffn_(up|down|gate|gate_up)_exps\\.weight"), ggml_backend_cpu_buffer_type()});
         return true;
     }
     if (arg == "--n-cpu-moe" || arg == "-ncmoe") {
@@ -1489,7 +1494,7 @@ bool gpt_params_find_arg(int argc, char ** argv, const std::string & arg, gpt_pa
             return true;
         }
         for (int32_t l = 0; l < n_layers; ++l) {
-            std::string pattern = "blk\\." + std::to_string(l) + "\\.(ffn_(up|down|gate)_exps\\.weight)";
+            std::string pattern = "blk\\." + std::to_string(l) + "\\.(ffn_(up|down|gate|gate_up)_exps\\.weight)";
             params.tensor_buft_overrides.push_back({strdup(pattern.c_str()), ggml_backend_cpu_buffer_type()});
         }
         return true;
