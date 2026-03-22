@@ -13,6 +13,12 @@
 
 #include <regex>
 
+static void log_text(const gpt_params & params_base, const std::string & text) {
+    if (params_base.minilog) {
+        LOG_TEE("%s\n", text.c_str());
+    }
+}
+
 server_context::~server_context() {
     if (ctx) {
         llama_free(ctx);
@@ -224,7 +230,10 @@ void server_context::init() {
             }
         }
 
-        const bool can_spec = common_speculative_is_compat(ctx);
+        bool can_spec = true;
+        if (!params_base.dry_run) {
+            can_spec = common_speculative_is_compat(ctx);
+        }  
         if (!can_spec) {
             SRV_WRN("%s", "speculative decoding not supported by this context\n");
         }
@@ -1466,6 +1475,7 @@ bool server_context::has_next_token(const completion_token_output& result,  serv
     return next;
 }
 
+
 bool server_context::process_token(completion_token_output& result, server_slot& slot) {
     // remember which tokens were sampled - used for repetition penalties during sampling
     const std::string token_str = result.text_to_send;
@@ -1562,7 +1572,7 @@ bool server_context::process_token(completion_token_output& result, server_slot&
         slot.stopped_limit = true;
         slot.has_next_token = false; // stop prediction
     }
-
+    log_text(params_base, "token:"+result.text_to_send);
     LOG_VERBOSE("next token", {
         {"id_slot",        slot.id},
         {"id_task",        slot.id_task},

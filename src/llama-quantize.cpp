@@ -1,6 +1,7 @@
 #include "llama-impl.h"
 #include "llama-model.h"
 #include "llama-model-loader.h"
+#include "llama-quantize.h"
 
 #include "ggml.h"
 #include "ggml-common.h"
@@ -79,7 +80,7 @@ struct quantize_state_internal {
         {}
 };
 
-static std::pair<ggml_type, int> interleaved_properties(ggml_type type) {
+std::pair<ggml_type, int> interleaved_properties(ggml_type type) {
     static std::unordered_map<ggml_type, std::pair<ggml_type, int>> k_map = {
         { GGML_TYPE_Q4_0_4_4,    { GGML_TYPE_Q4_0, 4} },
         { GGML_TYPE_Q4_0_4_8,    { GGML_TYPE_Q4_0, 4} },
@@ -1021,7 +1022,7 @@ static void llama_model_quantize_internal(const std::string & fname_inp, const s
         auto v = (std::vector<llama_model_kv_override>*)params->kv_overrides;
         kv_overrides = v->data();
     }
-    llama_model_loader ml(fname_inp, use_mmap, /*check_tensors*/ true, /* repack_tensors */ false,
+    llama_model_loader ml(fname_inp, 0, use_mmap, /*check_tensors*/ true, /* repack_tensors */ false,
             /* use_thp */ false, /* merge_qkv */ false, /* merge_up_gate_exps */ false, kv_overrides, nullptr);
     ml.init_mappings(false); // no prefetching
 

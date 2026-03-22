@@ -133,7 +133,7 @@ ggml_cgraph * llm_build_context::build_k_shift() {
         ? LLAMA_ROPE_TYPE_NEOX
         : hparams.rope_type;
 
-    const float yarn_attn_factor_shift = model.arch == LLM_ARCH_DEEPSEEK2
+    const float yarn_attn_factor_shift = model.arch == LLM_ARCH_DEEPSEEK2 || model.arch == LLM_ARCH_MISTRAL4
         ? 1.0f / (1.0f + 0.1f * logf(1.0f / freq_scale))
         : cparams.yarn_attn_factor;
 
@@ -9891,6 +9891,7 @@ ggml_cgraph * llm_build_context::llama_build_graph(
             } break;
         case LLM_ARCH_DEEPSEEK2:
         case LLM_ARCH_GLM_DSA:
+        case LLM_ARCH_MISTRAL4:
             {
                 result = llm.build_deepseek2();
             } break;
@@ -9987,8 +9988,10 @@ ggml_cgraph * llm_build_context::llama_build_graph(
             GGML_ABORT("fatal error");
     }
 
+    result->n_batch = llm.n_tokens;
+
     // add on pooling layer
-    if (lctx.cparams.mtp_op_type == MTP_OP_NONE && (lctx.cparams.embeddings || 
+    if (lctx.cparams.mtp_op_type == MTP_OP_NONE && (lctx.cparams.embeddings ||
         (lctx.model.hparams.nextn_predict_layers > 0 || lctx.model.mtp))) {
         result = llm.append_pooling(result);
     }
